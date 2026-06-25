@@ -1,0 +1,316 @@
+esphome:
+  name: jarvis-p4-7pol
+  friendly_name: "Jarvis P4 Painel Central"
+  comment: "Terminal de Comando Jarvis de 7 polegadas com Wi-Fi 6"
+  on_boot:
+    - priority: 1000
+      then:
+        - lambda: |-
+            gpio_set_direction(GPIO_NUM_27, GPIO_MODE_OUTPUT);
+            gpio_set_level(GPIO_NUM_27, 0);
+            vTaskDelay(pdMS_TO_TICKS(150));
+            gpio_set_level(GPIO_NUM_27, 1);
+            vTaskDelay(pdMS_TO_TICKS(200));
+
+esp32:
+  board: esp32-p4-devkitc-1
+  framework:
+    type: esp-idf
+    version: recommended
+  sdkconfig_options:
+    CONFIG_SPIRAM_XIP_FROM_PSRAM: "y"
+    CONFIG_SDMMC_HOST_DEFAULT: "y"
+
+psram:
+  mode: hex
+  speed: 200MHz
+
+# --- CONFIGURAÇÃO DE REDE VIA CHIP ESP32-C6 INTEGRADO ---
+wifi:
+  ssid: "AUTOMATION"
+  password: "Rot071630"
+  reboot_timeout: 0s 
+  manual_ip:
+    static_ip: 192.168.100.16
+    gateway: 192.168.100.1
+    subnet: 255.255.255.0
+    dns1: 192.168.100.1
+  ap:
+    ssid: "Jarvis-WiFi-Fallback"
+    password: "senha_de_fallback"
+
+captive_portal:
+
+logger:
+  level: INFO
+  hardware_uart: USB_SERIAL_JTAG 
+
+web_server:
+  port: 80
+  version: 3
+
+api:
+  encryption:
+    key: "RmyToy5e4rcbTaXVqpsngSy7+5Xv+11BJr74PaRRpEc="
+
+ota:
+  - platform: esphome
+    password: "dbbfeaadffffea4ccb9d4011251ccd36"
+
+# --- CONFIGURAÇÃO DE TEMPO E VARIÁVEIS GLOBAIS ---
+time:
+  - platform: sntp
+    id: sntp_time
+    timezone: "America/Sao_Paulo"
+    servers:
+      - "br.pool.ntp.org"
+
+globals:
+  - id: island_message
+    type: std::string
+    initial_value: '"JARVIS SYSTEM ONLINE"'
+
+# --- SCRIPT PARA NOTIFICAÇÕES DINÂMICAS ---
+script:
+  - id: flash_island
+    mode: restart
+    parameters:
+      msg: std::string
+    then:
+      - lambda: |-
+          id(island_message) = msg;
+      - delay: 8s
+      - lambda: |-
+          id(island_message) = "JARVIS SYSTEM ONLINE";
+
+# --- ARQUIVOS DE MÍDIA (PASTA DO ESPHOME) ---
+image:
+  - file: "fundo_jarvis.png"
+    id: fundo_hud
+    type: RGB565       
+  - file: "jarvis-Arc Reator.gif"
+    id: jarvis_core_p4
+    type: RGB565    
+    resize: 170x170    
+  - file: "ico_lampada.png"
+    id: img_lampada
+    type: RGB565
+  - file: "ico_led.png"
+    id: img_led
+    type: RGB565
+  - file: "ico_home.png"
+    id: img_home
+    type: RGB565
+  - file: "ico_tomada.png"
+    id: img_rele
+    type: RGB565
+
+font:
+  - file: "gfonts://Roboto"
+    id: font_title
+    size: 24
+  - file: "gfonts://Roboto"
+    id: font_status
+    size: 14
+  - file: "gfonts://Roboto"
+    id: font_small
+    size: 11
+
+# --- MONITORAMENTO DE SENSORES DO HOME ASSISTANT ---
+sensor:
+  - platform: homeassistant
+    id: temp_colombo
+    entity_id: weather.colombo
+    attribute: temperature
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+  - platform: homeassistant
+    id: bat_visita
+    entity_id: sensor.sonoff_10010985e6_battery_voltage
+  - platform: homeassistant
+    id: bat_cozinha
+    entity_id: sensor.sonoff_1001097b18_battery_voltage
+  - platform: homeassistant
+    id: bat_suite
+    entity_id: sensor.sonoff_1001097a69_battery_voltage
+
+# --- SENSORES BINÁRIOS (SEGURANÇA + PROXIMIDADE FÍSICA) ---
+binary_sensor:
+  - platform: status
+    name: "Painel Status"
+    id: panel_status
+
+  # NOVO: Sensor Infravermelho Físico na GPIO4 para Acordar Tela e Acionar Relé 1
+  - platform: gpio
+    pin: GPIO4
+    id: sensor_proximidade
+    name: "Sensor de Aproximação"
+    filters:
+      - delayed_on: 50ms
+    on_press:
+      then:
+        - switch.turn_on: rele_fisico_1
+        - script.execute: {id: flash_island, msg: "PROXIMIDADE: RELÉ 1 ATIVADO"}
+    on_release:
+      then:
+        - switch.turn_off: rele_fisico_1
+
+  # Sensores de Perímetro do HA
+  - platform: homeassistant
+    id: janela_visita
+    entity_id: binary_sensor.sonoff_10010985e6
+    on_press:
+      - script.execute: {id: flash_island, msg: "ALERTA: JANELA VISITA ABERTA"}
+  - platform: homeassistant
+    id: porta_cozinha
+    entity_id: binary_sensor.sonoff_1001097b18
+    on_press:
+      - script.execute: {id: flash_island, msg: "ALERTA: PORTA COZINHA ABERTA"}
+  - platform: homeassistant
+    id: janela_suite
+    entity_id: binary_sensor.sonoff_1001097a69
+    on_press:
+      - script.execute: {id: flash_island, msg: "ALERTA: JANELA SUITE ABERTA"}
+  - platform: homeassistant
+    id: janela_cozinha
+    entity_id: binary_sensor.sonoff_1001097a6d
+    on_press:
+      - script.execute: {id: flash_island, msg: "ALERTA: JANELA COZINHA ABERTA"}
+
+# --- CONTROLADORES DE DISPOSITIVOS (SWITCHES) ---
+switch:
+  # NOVOS: Módulos de Relés Físicos Conectados no ESP32-P4
+  - platform: gpio
+    pin: GPIO1
+    id: rele_fisico_1
+    name: "Relé Local 1 (Proximidade)"
+
+  - platform: gpio
+    pin: GPIO2
+    id: rele_fisico_2
+    name: "Relé Local 2 (Botão Tela)"
+
+  # Integrações Remotas do Home Assistant
+  - platform: homeassistant
+    id: sonoff_lavand
+    entity_id: switch.sonoff_100274555e_1
+  - platform: homeassistant
+    id: sonoff_coz_1
+    entity_id: switch.sonoff_100085a8e8_1
+  - platform: homeassistant
+    id: sonoff_coz_2
+    entity_id: switch.sonoff_100085a8e8_2
+  - platform: homeassistant
+    id: sonoff_coz_3
+    entity_id: switch.sonoff_100085a8e8_3
+  - platform: homeassistant
+    id: sonoff_fita_led
+    entity_id: switch.sonoff_10005cb881
+  - platform: homeassistant
+    id: sonoff_home_1
+    entity_id: switch.sonoff_1000acf957_1
+  - platform: homeassistant
+    id: sonoff_home_2
+    entity_id: switch.sonoff_1000acf957_2
+  - platform: homeassistant
+    id: sonoff_home_3
+    entity_id: switch.sonoff_1000acf957_3
+  - platform: homeassistant
+    id: sonoff_rele_1
+    entity_id: switch.sonoff_100020afd5_1
+  - platform: homeassistant
+    id: sonoff_rele_2
+    entity_id: switch.sonoff_100020afd5_2
+  - platform: homeassistant
+    id: sonoff_rele_3
+    entity_id: switch.sonoff_100020afd5_3
+  - platform: homeassistant
+    id: sonoff_rele_4
+    entity_id: switch.sonoff_100020afd5_4
+
+# --- DRIVER DO ECRÃ DIGITAL MIPI-DSI ---
+display:
+  - platform: mipi_dsi
+    id: jarvis_screen_p4
+    width: 800
+    height: 480
+    rotation: 0
+    auto_clear_screen: true
+    lambda: |-
+      it.image(0, 0, id(fundo_hud));
+      
+      auto color_jarvis = Color(0, 255, 255);
+      auto color_alert = Color(255, 69, 0); 
+      auto color_btn_bg = Color(10, 40, 45);
+      
+      it.print(400, 20, id(font_title), color_jarvis, TextAlign::CENTER, "JARVIS SYSTEM CORE");
+      
+      auto time_now = id(sntp_time).now();
+      it.printf(40, 25, id(font_small), Color::WHITE, "DATA: %02d/%02d/%04d", time_now.day_of_month, time_now.month, time_now.year);
+      it.printf(760, 25, id(font_small), color_jarvis, TextAlign::RIGHT, "HORA: %02d:%02d", time_now.hour, time_now.minute);
+
+      if (!std::isnan(id(temp_colombo).state)) {
+        it.printf(760, 45, id(font_small), Color::WHITE, TextAlign::RIGHT, "COLOMBO: %.1f°C", id(temp_colombo).state);
+      }
+
+      it.image(400, 240, id(jarvis_core_p4), ImageAlign::CENTER);
+      
+      // Telemetria de Baterias (Esquerda)
+      it.print(25, 65, id(font_status), color_jarvis, "DISPOSITIVOS:");
+      it.printf(25, 85, id(font_small), Color::LIGHT_GRAY, "Janela Visita: %.2fV", id(bat_visita).state);
+      it.printf(25, 105, id(font_small), Color::LIGHT_GRAY, "Porta Cozinha: %.2fV", id(bat_cozinha).state);
+      it.printf(25, 125, id(font_small), Color::LIGHT_GRAY, "Janela Suíte: %.2fV", id(bat_suite).state);
+
+      // Diagnóstico (Direita)
+      it.print(775, 65, id(font_status), color_jarvis, TextAlign::RIGHT, "DIAGNOSTICO:");
+      it.printf(775, 85, id(font_small), Color::LIGHT_GRAY, TextAlign::RIGHT, "Status HA: %s", id(panel_status).state ? "ONLINE" : "OFFLINE");
+      it.printf(775, 105, id(font_small), Color::LIGHT_GRAY, TextAlign::RIGHT, "IP: 192.168.100.16");
+
+      // --- RENDERING PAINEL ESQUERDO: LUZES ---
+      it.print(25, 155, id(font_status), color_jarvis, "ILUMINAÇÃO:");
+      
+      it.filled_rectangle(25, 175, 140, 35, color_btn_bg);
+      it.rectangle(25, 175, 140, 35, color_jarvis);
+      it.image(28, 177, id(img_lampada));
+      it.print(65, 185, id(font_small), Color::WHITE, id(sonoff_lavand).state ? "LAVAND: ON" : "LAVAND: OFF");
+
+      it.filled_rectangle(25, 215, 140, 35, color_btn_bg);
+      it.rectangle(25, 215, 140, 35, color_jarvis);
+      it.image(28, 217, id(img_lampada));
+      it.print(65, 225, id(font_small), Color::WHITE, id(sonoff_coz_1).state ? "COZ 1: ON" : "COZ 1: OFF");
+
+      it.filled_rectangle(25, 255, 140, 35, color_btn_bg);
+      it.rectangle(25, 255, 140, 35, color_jarvis);
+      it.image(28, 257, id(img_lampada));
+      it.print(65, 265, id(font_small), Color::WHITE, id(sonoff_coz_2).state ? "COZ 2: ON" : "COZ 2: OFF");
+
+      it.filled_rectangle(25, 295, 140, 35, color_btn_bg);
+      it.rectangle(25, 295, 140, 35, color_jarvis);
+      it.image(28, 297, id(img_lampada));
+      it.print(65, 305, id(font_small), Color::WHITE, id(sonoff_coz_3).state ? "COZ 3: ON" : "COZ 3: OFF");
+
+      it.filled_rectangle(25, 335, 140, 35, color_btn_bg);
+      it.rectangle(25, 335, 140, 35, color_jarvis);
+      it.image(28, 337, id(img_led));
+      it.print(65, 345, id(font_small), Color::WHITE, id(sonoff_fita_led).state ? "FITA: ON" : "FITA: OFF");
+
+      // Botões Rápidos Home
+      it.filled_rectangle(25, 385, 45, 30, color_btn_bg);
+      it.rectangle(25, 385, 45, 30, color_jarvis);
+      it.image(32, 384, id(img_home));
+      if(id(sonoff_home_1).state) it.rectangle(27, 387, 41, 26, color_jarvis);
+      
+      it.filled_rectangle(73, 385, 45, 30, color_btn_bg);
+      it.rectangle(73, 385, 45, 30, color_jarvis);
+      it.image(80, 384, id(img_home));
+      if(id(sonoff_home_2).state) it.rectangle(75, 387, 41, 26, color_jarvis);
+
+      it.filled_rectangle(120, 385, 45, 30, color_btn_bg);
+      it.rectangle(120, 385, 45, 30, color_jarvis);
+      it.image(127, 384, id(img_home));
+      if(id(sonoff_home_3).state) it.rectangle(122, 387, 41, 26, color_jarvis);
+
+
+      // --- RENDERING PAINEL DIREITO: RELÉS ---
+      it.print(635, 135, id(font_status), color_jarvis, "CENTRAL RELÉS:");
+
