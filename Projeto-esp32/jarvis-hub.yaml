@@ -1,0 +1,37 @@
+esphome:
+  name: jarvis-hub
+  platform: ESP32
+  board: esp32-s3-devkitc-1
+  build_path: build
+  platformio_options:
+    build_src_filter: +<../src/*.c> +<../src/*.cpp> +<../src/assets/*.c>
+
+wifi:
+  ssid: "Rotec Vivo"
+  password: "Rot253880"
+  manual_ip:
+    static_ip: 192.168.18.16
+    gateway: 192.168.18.1
+    subnet: 255.255.255.0
+    dns1: 192.168.18.1
+
+api:
+  encryption:
+    key: "RmyToy5e4rcbTaXVqpsngSy7+5Xv+11BJr74PaRRpEc="
+
+display:
+  - platform: ili9341
+    cs_pin: 10
+    dc_pin: 46
+    backlight_pin: 45
+    rotation: 90
+    lambda: |-
+      ui_init(); // Chama a inicialização da nossa UI
+
+lvgl:
+  buffer_size: 50%
+  touch_controller:
+    platform: ft6336
+    sda_pin: 16
+    scl_pin: 15
+    interrupt_pin: 17
